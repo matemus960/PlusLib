@@ -23,6 +23,7 @@ vtkStandardNewMacro(vtkPlusDataSource);
 std::string vtkPlusDataSource::DATA_SOURCE_TYPE_TOOL_TAG = "Tool";
 std::string vtkPlusDataSource::DATA_SOURCE_TYPE_VIDEO_TAG = "Video";
 std::string vtkPlusDataSource::DATA_SOURCE_TYPE_FIELDDATA_TAG = "FieldData";
+std::string vtkPlusDataSource::DATA_SOURCE_TYPE_STRAYMARKER_TAG = "StrayMarker";
 
 //----------------------------------------------------------------------------
 vtkPlusDataSource::vtkPlusDataSource()
@@ -80,6 +81,9 @@ void vtkPlusDataSource::PrintSelf(ostream& os, vtkIndent indent)
         break;
       case DATA_SOURCE_TYPE_FIELDDATA:
         os << indent << "Type: Fields" << std::endl;
+        break;
+      case DATA_SOURCE_TYPE_STRAYMARKER:
+        os << indent << "Type: StrayMarker" << std::endl;
         break;
       case DATA_SOURCE_TYPE_NONE:
         break;
@@ -261,6 +265,12 @@ PlusStatus vtkPlusDataSource::ReadConfiguration(vtkXMLDataElement* sourceElement
       return PLUS_FAIL;
     }
   }
+  else if (type != NULL && STRCASECMP(type, DATA_SOURCE_TYPE_STRAYMARKER_TAG.c_str()) == 0)
+  {
+    PlusTransformName idName(sourceId, this->GetReferenceCoordinateFrameName());
+    this->SetId(idName.GetTransformName());
+    this->SetType(DATA_SOURCE_TYPE_STRAYMARKER);
+  }
   else if (type != NULL && STRCASECMP(type, DATA_SOURCE_TYPE_FIELDDATA_TAG.c_str()) == 0)
   {
     this->SetId(sourceId);
@@ -421,7 +431,7 @@ PlusStatus vtkPlusDataSource::WriteConfiguration(vtkXMLDataElement* aSourceEleme
     return PLUS_FAIL;
   }
 
-  if (this->GetType() == DATA_SOURCE_TYPE_TOOL)
+  if (this->GetType() == DATA_SOURCE_TYPE_TOOL || this->GetType() == DATA_SOURCE_TYPE_STRAYMARKER)
   {
     PlusTransformName sourceId(this->GetId());
     aSourceElement->SetAttribute("Id", sourceId.From().c_str());
@@ -476,7 +486,7 @@ PlusStatus vtkPlusDataSource::WriteCompactConfiguration(vtkXMLDataElement* aSour
     return PLUS_FAIL;
   }
 
-  if (this->GetType() == DATA_SOURCE_TYPE_TOOL)
+  if (this->GetType() == DATA_SOURCE_TYPE_TOOL || this->GetType() == DATA_SOURCE_TYPE_STRAYMARKER)
   {
     PlusTransformName sourceId(this->GetId());
     aSourceElement->SetAttribute("Id", sourceId.From().c_str());

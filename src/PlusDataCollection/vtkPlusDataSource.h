@@ -34,6 +34,7 @@ enum DataSourceType
   DATA_SOURCE_TYPE_TOOL,
   DATA_SOURCE_TYPE_VIDEO,
   DATA_SOURCE_TYPE_FIELDDATA,
+  DATA_SOURCE_TYPE_STRAYMARKER,
 };
 
 class vtkPlusDataCollectionExport vtkPlusDataSource : public vtkObject
@@ -46,6 +47,7 @@ public:
   static std::string DATA_SOURCE_TYPE_TOOL_TAG;
   static std::string DATA_SOURCE_TYPE_VIDEO_TAG;
   static std::string DATA_SOURCE_TYPE_FIELDDATA_TAG;
+  static std::string DATA_SOURCE_TYPE_STRAYMARKER_TAG;
 
 public:
   static vtkPlusDataSource* New();
