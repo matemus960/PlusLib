@@ -148,6 +148,10 @@ public:
   /*! Set the desired baud rate.  Default: 9600. */
   vtkSetMacro(BaudRate, int);
   vtkGetMacro(BaudRate, int);
+  
+  /*! Set the maximum number of stray markers to track. Default: 0.*/
+  vtkSetMacro(MaxNumberOfStrays, int);
+  vtkGetMacro(MaxNumberOfStrays, int);
 
   /*!
     Measurement volume number. It can be used for defining volume type (dome, cube) and size.
@@ -259,6 +263,8 @@ protected:
   int SerialPort; 
   int BaudRate;
   int IsDeviceTracking;
+  
+  int MaxNumberOfStrays;
 
   int MeasurementVolumeNumber;
 

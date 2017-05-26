@@ -82,6 +82,7 @@ vtkPlusNDITracker::vtkPlusNDITracker()
   , BaudRate(9600)
   , IsDeviceTracking(0)
   , MeasurementVolumeNumber(0)
+  , MaxNumberOfStrays(0)
 {
   memset(this->CommandReply, 0, VTK_NDI_REPLY_LEN);
 
@@ -975,6 +976,7 @@ PlusStatus vtkPlusNDITracker::ReadConfiguration(vtkXMLDataElement* rootConfigEle
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(unsigned long, SerialPort, deviceConfig);
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(unsigned long, BaudRate, deviceConfig);
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(int, MeasurementVolumeNumber, deviceConfig);
+  XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(unsigned long, MaxNumberOfStrays, deviceConfig);
 
   XML_FIND_NESTED_ELEMENT_REQUIRED(dataSourcesElement, deviceConfig, "DataSources");
 
@@ -987,9 +989,9 @@ PlusStatus vtkPlusNDITracker::ReadConfiguration(vtkXMLDataElement* rootConfigEle
       continue;
     }
     bool isEqual(false);
-    if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*toolDataElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_TOOL_TAG, isEqual) != PLUS_SUCCESS || !isEqual)
+    if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*toolDataElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_TOOL_TAG, isEqual) != PLUS_SUCCESS && PlusCommon::XML::SafeCheckAttributeValueInsensitive(*toolDataElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_STRAYMARKER_TAG, isEqual) != PLUS_SUCCESS || !isEqual)
     {
-      // if this is not a Tool element, skip it
+      // if this is not a Tool or StrayMarker element, skip it
       continue;
     }
     const char* toolId = toolDataElement->GetAttribute("Id");
@@ -1000,6 +1002,11 @@ PlusStatus vtkPlusNDITracker::ReadConfiguration(vtkXMLDataElement* rootConfigEle
     }
     PlusTransformName toolTransformName(toolId, this->GetToolReferenceFrameName());
     std::string toolSourceId = toolTransformName.GetTransformName();
+    if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*toolDataElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_TOOL_TAG, isEqual) != PLUS_SUCCESS || !isEqual)
+    {
+      // if this is not a Tool element, don't create toolDescriptor
+      continue;
+    }
     vtkPlusDataSource* trackerTool = NULL;
     if (this->GetTool(toolSourceId, trackerTool) != PLUS_SUCCESS || trackerTool == NULL)
     {
@@ -1048,6 +1055,7 @@ PlusStatus vtkPlusNDITracker::WriteConfiguration(vtkXMLDataElement* rootConfig)
   trackerConfig->SetIntAttribute("SerialPort", this->SerialPort);
   trackerConfig->SetIntAttribute("BaudRate", this->BaudRate);
   trackerConfig->SetIntAttribute("MeasurementVolumeNumber", this->MeasurementVolumeNumber);
+  trackerConfig->SetIntAttribute("MaxNumberOfStrays", this->MaxNumberOfStrays);
   return PLUS_SUCCESS;
 }
 
