@@ -106,7 +106,7 @@ PlusStatus vtkPlusChannel::ReadConfiguration(vtkXMLDataElement* aChannelElement,
     PlusTransformName idName(id, this->OwnerDevice->GetToolReferenceFrameName());
     if (this->OwnerDevice->GetDataSource(id, aSource) == PLUS_SUCCESS)
     {
-      if (aSource->GetType() == DATA_SOURCE_TYPE_TOOL)
+      if (aSource->GetType() == DATA_SOURCE_TYPE_TOOL || aSource->GetType() == DATA_SOURCE_TYPE_STRAYMARKER)
       {
         this->Tools[aSource->GetId()] = aSource;
       }
@@ -209,6 +209,16 @@ PlusStatus vtkPlusChannel::WriteConfiguration(vtkXMLDataElement* aChannelElement
       }
       aTool->WriteCompactConfiguration(element);
     }
+	else if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*element, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_STRAYMARKER_TAG, isEqual) == PLUS_SUCCESS && isEqual)
+	{
+		vtkPlusDataSource* aTool = NULL;
+		if (element->GetAttribute("Id") == NULL || this->GetTool(aTool, element->GetAttribute("Id")) != PLUS_SUCCESS)
+		{
+			LOG_ERROR("Unable to retrieve tool when saving config.");
+			return PLUS_FAIL;
+		}
+		aTool->WriteCompactConfiguration(element);
+	}
     else if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*element, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_FIELDDATA_TAG, isEqual) == PLUS_SUCCESS && isEqual)
     {
       vtkPlusDataSource* aSource = NULL;
