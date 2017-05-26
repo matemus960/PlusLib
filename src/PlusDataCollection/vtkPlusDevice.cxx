@@ -989,6 +989,25 @@ PlusStatus vtkPlusDevice::ReadConfiguration(vtkXMLDataElement* rootXMLElement)
   vtkXMLDataElement* dataSourcesElement = deviceXMLElement->FindNestedElementWithName("DataSources");
   if (dataSourcesElement != NULL)
   {
+    // Add StrayMarker sources
+    int maxNumberOfStrays = 0;
+    deviceXMLElement->GetScalarAttribute("MaxNumberOfStrays", maxNumberOfStrays);
+    if (maxNumberOfStrays > 0)
+    {
+      vtkXMLDataElement* outputChannel = FindOutputChannelElement(rootXMLElement, "TrackerStream");
+      std::string markerId;
+      for (int i = 0; i < maxNumberOfStrays; i++)
+      {
+        i < 9 ? markerId = "Stray0" : markerId = "Stray";
+        markerId += std::to_string(i + 1);
+        vtkXMLDataElement* strayDataElement = vtkXMLDataElement::New();
+        strayDataElement->SetName("DataSource");
+        strayDataElement->SetAttribute("Id", markerId.c_str());
+        outputChannel->AddNestedElement(strayDataElement);
+        strayDataElement->SetAttribute("Type", "StrayMarker");
+        dataSourcesElement->AddNestedElement(strayDataElement);
+      }
+    }
     // Read source configurations
     for (int source = 0; source < dataSourcesElement->GetNumberOfNestedElements(); source++)
     {
@@ -1015,6 +1034,21 @@ PlusStatus vtkPlusDevice::ReadConfiguration(vtkXMLDataElement* rootXMLElement)
         if (this->AddTool(aDataSource) != PLUS_SUCCESS)
         {
           LOCAL_LOG_ERROR("Failed to add tool '" << (!aDataSource->GetId().empty() ? aDataSource->GetId() : "(unspecified)") << "' to device on port " << (!aDataSource->GetPortName().empty() ? aDataSource->GetPortName() : "(unspecified)"));
+        }
+      }
+      else if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*dataSourceElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_STRAYMARKER_TAG, isEqual) == PLUS_SUCCESS && isEqual)
+      {
+        aDataSource->SetReferenceCoordinateFrameName(this->ToolReferenceFrameName);
+
+        if (aDataSource->ReadConfiguration(dataSourceElement, this->RequirePortNameInDeviceSetConfiguration, this->RequireImageOrientationInConfiguration, this->GetDeviceId()) != PLUS_SUCCESS)
+        {
+          LOCAL_LOG_ERROR("Unable to add tool to tracker - failed to read tool configuration");
+          continue;
+        }
+
+        if (this->AddTool(aDataSource) != PLUS_SUCCESS)
+        {
+          LOCAL_LOG_ERROR("Failed to add tool '" << (!aDataSource->GetId().empty() ? aDataSource->GetId() : "(unspecified)") << "' to device");
         }
       }
       else if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*dataSourceElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_FIELDDATA_TAG, isEqual) == PLUS_SUCCESS && isEqual)
@@ -1140,6 +1174,16 @@ PlusStatus vtkPlusDevice::WriteConfiguration(vtkXMLDataElement* config)
       vtkPlusDataSource* aDataSource = NULL;
       bool isEqual(false);
       if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*dataSourceElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_TOOL_TAG, isEqual) == PLUS_SUCCESS && isEqual)
+      {
+        PlusTransformName toolId(dataSourceElement->GetAttribute("Id"), this->GetToolReferenceFrameName());
+        if (dataSourceElement->GetAttribute("Id") == NULL || this->GetTool(toolId.GetTransformName(), aDataSource) != PLUS_SUCCESS)
+        {
+          LOCAL_LOG_ERROR("Unable to retrieve tool when saving config.");
+          return PLUS_FAIL;
+        }
+        aDataSource->WriteConfiguration(dataSourceElement);
+      }
+      else if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*dataSourceElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_STRAYMARKER_TAG, isEqual) == PLUS_SUCCESS && isEqual)
       {
         PlusTransformName toolId(dataSourceElement->GetAttribute("Id"), this->GetToolReferenceFrameName());
         if (dataSourceElement->GetAttribute("Id") == NULL || this->GetTool(toolId.GetTransformName(), aDataSource) != PLUS_SUCCESS)
