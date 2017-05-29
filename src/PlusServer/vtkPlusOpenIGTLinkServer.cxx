@@ -96,6 +96,8 @@ vtkPlusOpenIGTLinkServer::vtkPlusOpenIGTLinkServer()
   , GracePeriodLogLevel(vtkPlusLogger::LOG_LEVEL_DEBUG)
   , MissingInputGracePeriodSec(0.0)
   , BroadcastStartTime(0.0)
+  , MaxNumberOfStrays(0)
+  , StrayReferenceFrame("Tracker")
 {
 
 }
@@ -1062,6 +1064,8 @@ PlusStatus vtkPlusOpenIGTLinkServer::ReadConfiguration(vtkXMLDataElement* server
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(int, NumberOfRetryAttempts, serverElement);
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(double, DelayBetweenRetryAttemptsSec, serverElement);
   XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(double, KeepAliveIntervalSec, serverElement);
+  XML_READ_SCALAR_ATTRIBUTE_OPTIONAL(unsigned long, MaxNumberOfStrays, serverElement);
+  XML_READ_STRING_ATTRIBUTE_OPTIONAL(StrayReferenceFrame, serverElement);
   XML_READ_BOOL_ATTRIBUTE_OPTIONAL(SendValidTransformsOnly, serverElement);
   XML_READ_BOOL_ATTRIBUTE_OPTIONAL(IgtlMessageCrcCheckEnabled, serverElement);
   XML_READ_BOOL_ATTRIBUTE_OPTIONAL(LogWarningOnNoDataAvailable, serverElement);
@@ -1076,6 +1080,26 @@ PlusStatus vtkPlusOpenIGTLinkServer::ReadConfiguration(vtkXMLDataElement* server
   vtkXMLDataElement* defaultClientInfo = serverElement->FindNestedElementWithName("DefaultClientInfo");
   if (defaultClientInfo != NULL)
   {
+	// add transform names for desired number of stray markers
+    if (this->MaxNumberOfStrays > 0)
+    {
+      vtkXMLDataElement* transformNames = defaultClientInfo->FindNestedElementWithName("TransformNames");
+      if (transformNames != NULL)
+      {
+        std::string markerId;
+        for (int i = 0; i < this->MaxNumberOfStrays; i++)
+        {
+          this->MaxNumberOfStrays < 9 ? markerId = "Stray0" : markerId = "Stray";
+          markerId += std::to_string(i + 1);
+          markerId += "To";
+		  markerId += this->StrayReferenceFrame;
+          vtkXMLDataElement* transformName = vtkXMLDataElement::New();
+          transformName->SetName("Transform");
+          transformName->SetAttribute("Name", markerId.c_str());
+          transformNames->AddNestedElement(transformName);
+        }
+      }
+    }
     if (this->DefaultClientInfo.SetClientInfoFromXmlData(defaultClientInfo) != PLUS_SUCCESS)
     {
       return PLUS_FAIL;

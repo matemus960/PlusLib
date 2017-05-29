@@ -133,6 +133,14 @@ public:
   /*! Set transform repository instance */
   vtkSetMacro(TransformRepository, vtkPlusTransformRepository*);
   vtkGetMacroConst(TransformRepository, vtkPlusTransformRepository*);
+  
+  /*! Set maximum number of stray markers. Default: 0.*/
+  vtkSetMacro(MaxNumberOfStrays, int);
+  vtkGetMacro(MaxNumberOfStrays, int);
+
+  /*! Set reference frame name for stray markers. Default: Tracker.*/
+  vtkSetStdStringMacro(StrayReferenceFrame);
+  vtkGetStdStringMacro(StrayReferenceFrame);
 
   /*! Get number of connected clients */
   virtual unsigned int GetNumberOfConnectedClients() const;
@@ -219,6 +227,9 @@ protected:
   vtkSetStdStringMacro(ConfigFilename);
 
   bool HasGracePeriodExpired();
+  
+  int MaxNumberOfStrays;
+  std::string StrayReferenceFrame;
 
 private:
   vtkPlusOpenIGTLinkServer(const vtkPlusOpenIGTLinkServer&);
