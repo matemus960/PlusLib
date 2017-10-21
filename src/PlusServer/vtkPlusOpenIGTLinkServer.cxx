@@ -1089,7 +1089,7 @@ PlusStatus vtkPlusOpenIGTLinkServer::ReadConfiguration(vtkXMLDataElement* server
         std::string markerId;
         for (int i = 0; i < this->MaxNumberOfStrays; i++)
         {
-          this->MaxNumberOfStrays < 9 ? markerId = "Stray0" : markerId = "Stray";
+          i < 9 ? markerId = "Stray0" : markerId = "Stray";
           markerId += std::to_string(i + 1);
           markerId += "To";
 		  markerId += this->StrayReferenceFrame;
