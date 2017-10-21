@@ -415,9 +415,16 @@ PlusStatus vtkPlusNDITracker::InternalUpdate()
   }
 
   int errnum = 0;
-
   // get the transforms for all tools from the NDI
-  ndiCommand(this->Device, "TX:0801");
+
+  if (this->MaxNumberOfStrays > 0)
+  {
+    ndiCommand(this->Device, "TX:1801");
+  }
+  else
+  {
+    ndiCommand(this->Device, "TX:0801");
+  }
   errnum = ndiGetError(this->Device);
   if (errnum)
   {
@@ -430,6 +437,33 @@ PlusStatus vtkPlusNDITracker::InternalUpdate()
       LOG_ERROR(ndiErrorString(errnum));
     }
     return PLUS_FAIL;
+  }
+  // get stray markers data
+  if (this->MaxNumberOfStrays > 0)
+  {
+    // get number of all registered stray markers
+    int numberOfStrays = ndiGetTXNumberOfPassiveStrays(this->Device);
+    std::vector<std::array<double, 3>> straysPos;
+    double coord[3];
+    for (int i = 0; i < numberOfStrays; i++)
+    {
+      if (ndiGetTXPassiveStray(this->Device, i, coord) != NDI_OKAY)
+      {
+        // no available data for i marker
+        continue;
+      }
+      straysPos.push_back({ coord[0], coord[1], coord[2] });
+    }
+    numberOfStrays = straysPos.size();
+    if (numberOfStrays > 0)
+    {
+      double maxDistance = DBL_MAX;
+      int noMatchFlag = INT_MAX;
+      std::vector<std::vector<std::pair<int, double>>> distanceToLastMarkers = GetDistanceStrays(numberOfStrays, maxDistance, straysPos);
+      SortDistanceStrays(distanceToLastMarkers);
+      std::vector<int> minMatchedIndex = MatchStrays(numberOfStrays, noMatchFlag, maxDistance, distanceToLastMarkers);
+      UpdateLastStraysData(numberOfStrays, noMatchFlag, minMatchedIndex, straysPos);
+    }
   }
 
   // default to incrementing frame count by one (in case a frame index cannot be retrieved from the tracker for a specific tool)
@@ -444,60 +478,88 @@ PlusStatus vtkPlusNDITracker::InternalUpdate()
     unsigned long toolFrameNumber = defaultToolFrameNumber;
     vtkPlusDataSource* trackerTool = it->second;
     std::string toolSourceId = trackerTool->GetId();
-    NdiToolDescriptorsType::iterator ndiToolDescriptorIt = this->NdiToolDescriptors.find(toolSourceId);
-    if (ndiToolDescriptorIt == this->NdiToolDescriptors.end())
+    int toolSourceType = trackerTool->GetType();
+    if (toolSourceType == DATA_SOURCE_TYPE_TOOL)
     {
-      LOG_ERROR("Tool descriptor is not found for tool " << toolSourceId);
-      this->ToolTimeStampedUpdate(trackerTool->GetId(), toolToTrackerTransform, toolFlags, toolFrameNumber, toolTimestamp);
-      continue;
-    }
-    int portHandle = ndiToolDescriptorIt->second.PortHandle;
-    if (portHandle <= 0)
-    {
-      LOG_ERROR("Port handle is invalid for tool " << toolSourceId);
-      this->ToolTimeStampedUpdate(toolSourceId.c_str(), toolToTrackerTransform, toolFlags, toolFrameNumber, toolTimestamp);
-      continue;
-    }
-
-    double ndiTransform[8] = {1, 0, 0, 0, 0, 0, 0, 0};
-    int ndiToolAbsent = ndiGetTXTransform(this->Device, portHandle, ndiTransform);
-    int ndiPortStatus = ndiGetTXPortStatus(this->Device, portHandle);
-    unsigned long ndiFrameIndex = ndiGetTXFrame(this->Device, portHandle);
-
-    // convert status flags from NDI to Plus format
-    const unsigned long ndiPortStatusValidFlags = NDI_TOOL_IN_PORT | NDI_INITIALIZED | NDI_ENABLED;
-    if ((ndiPortStatus & ndiPortStatusValidFlags) != ndiPortStatusValidFlags)
-    {
-      toolFlags = TOOL_MISSING;
-    }
-    else
-    {
-      if (ndiToolAbsent)
+      NdiToolDescriptorsType::iterator ndiToolDescriptorIt = this->NdiToolDescriptors.find(toolSourceId);
+      if (ndiToolDescriptorIt == this->NdiToolDescriptors.end())
       {
-        toolFlags = TOOL_OUT_OF_VIEW;
+        LOG_ERROR("Tool descriptor is not found for tool " << toolSourceId);
+        this->ToolTimeStampedUpdate(trackerTool->GetId(), toolToTrackerTransform, toolFlags, toolFrameNumber, toolTimestamp);
+        continue;
       }
-      if (ndiPortStatus & NDI_OUT_OF_VOLUME)
+      int portHandle = ndiToolDescriptorIt->second.PortHandle;
+      if (portHandle <= 0)
       {
-        toolFlags = TOOL_OUT_OF_VOLUME;
+        LOG_ERROR("Port handle is invalid for tool " << toolSourceId);
+        this->ToolTimeStampedUpdate(toolSourceId.c_str(), toolToTrackerTransform, toolFlags, toolFrameNumber, toolTimestamp);
+        continue;
       }
-      // TODO all these button state toolFlags are on regardless of the actual state
-      //if (ndiPortStatus & NDI_SWITCH_1_ON)  { toolFlags = TOOL_SWITCH1_IS_ON; }
-      //if (ndiPortStatus & NDI_SWITCH_2_ON)  { toolFlags = TOOL_SWITCH2_IS_ON; }
-      //if (ndiPortStatus & NDI_SWITCH_3_ON)  { toolFlags = TOOL_SWITCH3_IS_ON; }
-    }
 
-    ndiTransformToMatrixd(ndiTransform, *toolToTrackerTransform->Element);
-    toolToTrackerTransform->Transpose();
+      double ndiTransform[8] = { 1, 0, 0, 0, 0, 0, 0, 0 };
+      int ndiToolAbsent = ndiGetTXTransform(this->Device, portHandle, ndiTransform);
+      int ndiPortStatus = ndiGetTXPortStatus(this->Device, portHandle);
+      unsigned long ndiFrameIndex = ndiGetTXFrame(this->Device, portHandle);
 
-    // by default (if there is no camera frame number associated with
-    // the tool transformation) the most recent timestamp is used.
-    if (!ndiToolAbsent && ndiFrameIndex)
-    {
-      // this will create a timestamp from the frame number
-      toolFrameNumber = ndiFrameIndex;
-      if (ndiFrameIndex > this->LastFrameNumber)
+      // convert status flags from NDI to Plus format
+      const unsigned long ndiPortStatusValidFlags = NDI_TOOL_IN_PORT | NDI_INITIALIZED | NDI_ENABLED;
+      if ((ndiPortStatus & ndiPortStatusValidFlags) != ndiPortStatusValidFlags)
       {
-        this->LastFrameNumber = ndiFrameIndex;
+        toolFlags = TOOL_MISSING;
+      }
+      else
+      {
+        if (ndiToolAbsent)
+        {
+          toolFlags = TOOL_OUT_OF_VIEW;
+        }
+        if (ndiPortStatus & NDI_OUT_OF_VOLUME)
+        {
+          toolFlags = TOOL_OUT_OF_VOLUME;
+        }
+        // TODO all these button state toolFlags are on regardless of the actual state
+        //if (ndiPortStatus & NDI_SWITCH_1_ON)  { toolFlags = TOOL_SWITCH1_IS_ON; }
+        //if (ndiPortStatus & NDI_SWITCH_2_ON)  { toolFlags = TOOL_SWITCH2_IS_ON; }
+        //if (ndiPortStatus & NDI_SWITCH_3_ON)  { toolFlags = TOOL_SWITCH3_IS_ON; }
+      }
+
+
+      ndiTransformToMatrixd(ndiTransform, *toolToTrackerTransform->Element);
+      toolToTrackerTransform->Transpose();
+
+      // by default (if there is no camera frame number associated with
+      // the tool transformation) the most recent timestamp is used.
+      if (!ndiToolAbsent && ndiFrameIndex)
+      {
+        // this will create a timestamp from the frame number
+        toolFrameNumber = ndiFrameIndex;
+        if (ndiFrameIndex > this->LastFrameNumber)
+        {
+          this->LastFrameNumber = ndiFrameIndex;
+        }
+      }
+    }
+    else if (toolSourceType == DATA_SOURCE_TYPE_STRAYMARKER)
+    {
+      int strayMarkerParsedIndex[2] = { toolSourceId[5] - '0', toolSourceId[6] - '0' };
+      int strayMarkerIndex = strayMarkerParsedIndex[0] * 10 + strayMarkerParsedIndex[1];
+      if (strayMarkerIndex <= this->MaxNumberOfStrays)
+      {
+        double ndiTransform[8] = { 1, 0, 0, 0, this->LastStraysPos[strayMarkerIndex - 1][0], this->LastStraysPos[strayMarkerIndex - 1][1], this->LastStraysPos[strayMarkerIndex - 1][2], 0 };
+        ndiTransformToMatrixd(ndiTransform, *toolToTrackerTransform->Element);
+        toolToTrackerTransform->Transpose();
+        if (this->LastStraysStatus[strayMarkerIndex - 1] == TOOL_OK)
+        {
+          toolFlags = TOOL_OK;
+        }
+        else if (this->LastStraysStatus[strayMarkerIndex - 1] == TOOL_MISSING)
+        {
+          toolFlags = TOOL_MISSING;
+        }
+      }
+      else
+      {
+        toolFlags = TOOL_MISSING;
       }
     }
 
@@ -980,6 +1042,12 @@ PlusStatus vtkPlusNDITracker::ReadConfiguration(vtkXMLDataElement* rootConfigEle
 
   XML_FIND_NESTED_ELEMENT_REQUIRED(dataSourcesElement, deviceConfig, "DataSources");
 
+  if (this->MaxNumberOfStrays > 0)
+  {
+    std::array<double, 3> initialCoords = { 0, 0, 0 };
+    this->LastStraysPos.resize(this->MaxNumberOfStrays, initialCoords);
+    this->LastStraysStatus.resize(this->MaxNumberOfStrays, TOOL_MISSING);
+  }
   for (int nestedElementIndex = 0; nestedElementIndex < dataSourcesElement->GetNumberOfNestedElements(); nestedElementIndex++)
   {
     vtkXMLDataElement* toolDataElement = dataSourcesElement->GetNestedElement(nestedElementIndex);
@@ -1004,7 +1072,7 @@ PlusStatus vtkPlusNDITracker::ReadConfiguration(vtkXMLDataElement* rootConfigEle
     std::string toolSourceId = toolTransformName.GetTransformName();
     if (PlusCommon::XML::SafeCheckAttributeValueInsensitive(*toolDataElement, "Type", vtkPlusDataSource::DATA_SOURCE_TYPE_TOOL_TAG, isEqual) != PLUS_SUCCESS || !isEqual)
     {
-      // if this is not a Tool element, don't create toolDescriptor
+      // if this is not a Tool element, skip NDIToolDescriptor
       continue;
     }
     vtkPlusDataSource* trackerTool = NULL;
@@ -1013,7 +1081,6 @@ PlusStatus vtkPlusNDITracker::ReadConfiguration(vtkXMLDataElement* rootConfigEle
       LOG_ERROR("Failed to get NDI tool: " << toolSourceId);
       continue;
     }
-
     int wiredPortNumber = -1;
     if (toolDataElement->GetAttribute("PortName") != NULL)
     {
@@ -1119,5 +1186,149 @@ void vtkPlusNDITracker::LogVolumeList(const char* ndiVolumeListCommandReply, int
         metalResistant = "unknown";
     }
     LOG_DYNAMIC(" Metal resistant: " << metalResistant << " (" << volDescriptor[72] << ")", logLevel);
+  }
+}
+
+//----------------------------------------------------------------------------
+std::vector<int> vtkPlusNDITracker::MatchStrays(int numberOfStrays, int noMatchFlag, double maxDistance, std::vector<std::vector<std::pair<int, double>>>& distanceToLastMarkers)
+{
+  std::vector<int> minMatchedIndex(this->MaxNumberOfStrays, noMatchFlag);
+  std::vector<double> minDistance(this->MaxNumberOfStrays, maxDistance);
+  for (int i = 0; i < this->MaxNumberOfStrays; i++)
+  {
+    if (distanceToLastMarkers[i][0].second != maxDistance)
+    {
+      minMatchedIndex[i] = distanceToLastMarkers[i][0].first;
+      minDistance[i] = distanceToLastMarkers[i][0].second;
+    }
+  }
+  bool remainedMinIndex = false;
+  bool checkFromTheTop = true;
+  bool betterMatchAlreadyExist = false;
+  while (checkFromTheTop)
+  {
+    checkFromTheTop = false;
+    for (int i = 0; i < this->MaxNumberOfStrays; i++)
+    {
+      for (int j = 0; j < numberOfStrays; j++)
+      {
+        if (minMatchedIndex[i] == noMatchFlag)
+        {
+          break;
+        }
+        else if (distanceToLastMarkers[i][j].second == maxDistance)
+        {
+          minMatchedIndex[i] = noMatchFlag;
+          minDistance[i] = maxDistance;
+          break;
+        }
+        else
+        {
+          betterMatchAlreadyExist = false;
+          for (int k = 0; k < this->MaxNumberOfStrays; k++)
+          {
+            if (i != k && distanceToLastMarkers[i][j].first == minMatchedIndex[k])
+            {
+              if (distanceToLastMarkers[i][j].second > minDistance[k])
+              {
+                betterMatchAlreadyExist = true;
+                break;
+              }
+            }
+          }
+          if (!betterMatchAlreadyExist)
+          {
+            if (minMatchedIndex[i] != distanceToLastMarkers[i][j].first)
+            {
+              minMatchedIndex[i] = distanceToLastMarkers[i][j].first;
+              minDistance[i] = distanceToLastMarkers[i][j].second;
+              remainedMinIndex = false;
+            }
+            else
+            {
+              remainedMinIndex = true;
+            }
+            if (remainedMinIndex)
+            {
+              break;
+            }
+            else
+            {
+              checkFromTheTop = true;
+              break;
+            }
+          }
+        }
+        if (j == numberOfStrays - 1)
+        {
+          minMatchedIndex[i] = noMatchFlag;
+          minDistance[i] = maxDistance;
+        }
+      }
+      if (checkFromTheTop)
+      {
+        break;
+      }
+    }
+  }
+  return minMatchedIndex;
+}
+
+//----------------------------------------------------------------------------
+std::vector<std::vector<std::pair<int, double>>> vtkPlusNDITracker::GetDistanceStrays(int numberOfStrays, double maxDistance, std::vector<std::array<double, 3>>& straysPos)
+{
+  std::vector<std::vector<std::pair<int, double>>> distanceToLastMarkers(this->MaxNumberOfStrays, std::vector<std::pair<int, double>>(numberOfStrays, std::make_pair(-1, maxDistance)));
+  for (int i = 0; i < numberOfStrays; i++)
+  {
+    for (int j = 0; j < this->MaxNumberOfStrays; j++)
+    {
+      distanceToLastMarkers[j][i].first = i;
+      if (this->LastStraysPos[j][0] != 0 || this->LastStraysPos[j][1] != 0 || this->LastStraysPos[j][2] != 0)
+      {
+        distanceToLastMarkers[j][i].second = sqrt(pow(this->LastStraysPos[j][0] - straysPos[i][0], 2) + pow(this->LastStraysPos[j][1] - straysPos[i][1], 2) + pow(this->LastStraysPos[j][2] - straysPos[i][2], 2));
+      }
+    }
+  }
+  return distanceToLastMarkers;
+}
+
+//----------------------------------------------------------------------------
+void vtkPlusNDITracker::SortDistanceStrays(std::vector<std::vector<std::pair<int, double>>>& distanceToLastMarkers)
+{
+  for (int i = 0; i < this->MaxNumberOfStrays; i++)
+  {
+    std::sort(distanceToLastMarkers[i].begin(), distanceToLastMarkers[i].end(), [](const std::pair<int, double>& left, const std::pair<int, double>& right) { return left.second < right.second; });
+  }
+}
+
+//----------------------------------------------------------------------------
+void vtkPlusNDITracker::UpdateLastStraysData(int numberOfStrays, int noMatchFlag, std::vector<int>& minMatchedIndex, std::vector<std::array<double, 3>>& straysPos)
+{
+  std::vector<int> unusedStrays;
+  for (int i = 0; i < numberOfStrays; i++)
+  {
+    if (!std::any_of(minMatchedIndex.begin(), minMatchedIndex.end(), [&i](int val) { return i == val; }))
+	{
+      unusedStrays.push_back(i);
+	}
+  }
+  for (int i = 0; i < this->MaxNumberOfStrays; i++)
+  {
+    this->LastStraysStatus[i] = TOOL_MISSING;
+    if (minMatchedIndex[i] != noMatchFlag)
+    {
+      this->LastStraysPos[i][0] = straysPos[minMatchedIndex[i]][0];
+      this->LastStraysPos[i][1] = straysPos[minMatchedIndex[i]][1];
+      this->LastStraysPos[i][2] = straysPos[minMatchedIndex[i]][2];
+      this->LastStraysStatus[i] = TOOL_OK;
+    }
+    else if (unusedStrays.size() > 0)
+    {
+      this->LastStraysPos[i][0] = straysPos[unusedStrays[0]][0];
+      this->LastStraysPos[i][1] = straysPos[unusedStrays[0]][1];
+      this->LastStraysPos[i][2] = straysPos[unusedStrays[0]][2];
+      this->LastStraysStatus[i] = TOOL_OK;
+      unusedStrays.erase(unusedStrays.begin());
+    }
   }
 }

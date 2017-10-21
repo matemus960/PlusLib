@@ -148,10 +148,11 @@ public:
   /*! Set the desired baud rate.  Default: 9600. */
   vtkSetMacro(BaudRate, int);
   vtkGetMacro(BaudRate, int);
-  
-  /*! Set the maximum number of stray markers to track. Default: 0.*/
+
+  /*! Set the maximum number of stray markers. Default: 0.*/
   vtkSetMacro(MaxNumberOfStrays, int);
   vtkGetMacro(MaxNumberOfStrays, int);
+  //vtkSet
 
   /*!
     Measurement volume number. It can be used for defining volume type (dome, cube) and size.
@@ -168,7 +169,7 @@ public:
     to the tools.  This should only be used within vtkTracker.cxx.
   */
   PlusStatus InternalUpdate();
-  
+
   /*! Read NDI tracker configuration from xml data */
   virtual PlusStatus ReadConfiguration(vtkXMLDataElement* config); 
 
@@ -181,6 +182,18 @@ public:
 protected:
   vtkPlusNDITracker();
   ~vtkPlusNDITracker();
+
+  /*! Match currently recorded stray markers position with last recorded strays */
+  std::vector<int> MatchStrays(int numberOfStrays, int noMatchFlag, double maxDistance, std::vector<std::vector<std::pair<int, double>>>& distanceToLastMarkers);
+
+  /*! Calculate distance between currently recorded stray markers and last recorded strays */
+  std::vector<std::vector<std::pair<int, double>>> GetDistanceStrays(int numberOfStrays, double maxDistance, std::vector<std::array<double, 3>>& straysPos);
+
+  /*! Sort distances between last recorded stray markers and each currently recorded strays */
+  void SortDistanceStrays(std::vector<std::vector<std::pair<int, double>>>& distanceToLastMarkers);
+
+  /*! Update last recorded strays data */
+  void UpdateLastStraysData(int numberOfStrays, int noMatchFlag, std::vector<int>& minMatchedIndex, std::vector<std::array<double, 3>>& straysPos);
 
   struct NdiToolDescriptor
   {
@@ -263,8 +276,10 @@ protected:
   int SerialPort; 
   int BaudRate;
   int IsDeviceTracking;
-  
+
   int MaxNumberOfStrays;
+  std::vector<std::array<double, 3>> LastStraysPos;
+  std::vector<int> LastStraysStatus;
 
   int MeasurementVolumeNumber;
 
