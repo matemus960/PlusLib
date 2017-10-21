@@ -989,7 +989,7 @@ PlusStatus vtkPlusDevice::ReadConfiguration(vtkXMLDataElement* rootXMLElement)
   vtkXMLDataElement* dataSourcesElement = deviceXMLElement->FindNestedElementWithName("DataSources");
   if (dataSourcesElement != NULL)
   {
-    // Add StrayMarker sources
+    // stray markers
     int maxNumberOfStrays = 0;
     deviceXMLElement->GetScalarAttribute("MaxNumberOfStrays", maxNumberOfStrays);
     if (maxNumberOfStrays > 0)
@@ -1003,7 +1003,10 @@ PlusStatus vtkPlusDevice::ReadConfiguration(vtkXMLDataElement* rootXMLElement)
         vtkXMLDataElement* strayDataElement = vtkXMLDataElement::New();
         strayDataElement->SetName("DataSource");
         strayDataElement->SetAttribute("Id", markerId.c_str());
-        outputChannel->AddNestedElement(strayDataElement);
+        if (outputChannel != NULL)
+        {
+		  outputChannel->AddNestedElement(strayDataElement);
+        }
         strayDataElement->SetAttribute("Type", "StrayMarker");
         dataSourcesElement->AddNestedElement(strayDataElement);
       }
